@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
-
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 @dataclass
 class ESConfig:
@@ -14,7 +14,8 @@ class ESConfig:
     batches_per_fitness     : int = 4
     use_amp                 : bool = True
     base_seed               : int = 1234      # for deterministic stochastic encoding
-
+    seed                    : int = 0 
+    max_update              : float | None = 1e-3 
 
 def _iter_params(model: torch.nn.Module) -> list[torch.nn.Parameter]:
     return [p for p in model.parameters() if p.requires_grad]
@@ -139,11 +140,12 @@ def es_step(model, params, loader, loader_iter, cfg: ESConfig, device: torch.dev
     # Antithetic ES estimator
     coef = cfg.lr / (2.0 * pairs * cfg.sigma)
 
-    max_update = 1e-3  # per-parameter elementwise cap to avoid large jumps
+    max_update = cfg.max_update  # per-parameter elementwise cap to avoid large jumps
 
     for p, g in zip(params, grad_acc):
         delta = coef * g
-        delta = delta.clamp_(-max_update, max_update)
+        if max_update is not None:
+            delta = delta.clamp_(-max_update, max_update)
         p.add_(delta)
 
     mean_fp = float((d + 0).mean().item())  # NOT MEANINGFULL NOW; keep logging simple
@@ -160,3 +162,37 @@ def train_es(model, loader, cfg: ESConfig, device: torch.device, *, print_every:
 
         if it % print_every == 0 or it == 1:
             print(f"iter={it:04d}  base_loss={-base_f:.4f}  base_acc={base_acc:.3f}")
+
+@torch.no_grad()
+def pack_params(model_or_params):
+    """
+    Flatten trainable parameters into a single 1D tensor.
+    """
+    if isinstance(model_or_params, (list, tuple)):
+        params = list(model_or_params)
+    else:
+        params = _iter_params(model_or_params)
+    return parameters_to_vector(params).detach().clone()
+
+
+@torch.no_grad()
+def unpack_params_into(model: torch.nn.Module, vec: torch.Tensor) -> None:
+    """Write a flat parameter vector back into model trainable parameters."""
+    params = _iter_params(model)  # uses your existing helper
+    vector_to_parameters(vec, params)
+
+@torch.no_grad()
+def sample_antithetic_noise(params_flat: torch.Tensor, population_size: int, seed: int = 0) -> torch.Tensor:
+    """
+    Returns eps for antithetic sampling.
+    Output shape: (population_size//2, D), where D = params_flat.numel().
+    For each eps, you evaluate +eps and -eps.
+    """
+    if population_size % 2 != 0:
+        raise ValueError("population_size must be even (antithetic sampling uses +/- pairs).")
+
+    pairs = population_size // 2
+    g = torch.Generator(device=params_flat.device)
+    g.manual_seed(int(seed))
+    eps = torch.randn((pairs, params_flat.numel()), generator=g, device=params_flat.device, dtype=params_flat.dtype)
+    return eps
