@@ -200,7 +200,9 @@ def main():
 
     ap.add_argument("--parallel-chunk", type=int, default=0,
                 help="If >0 and CUDA, evaluate ES population in chunks using vmap (single-GPU parallel ES).")
-
+    
+    ap.add_argument("--repeat-input", action="store_true",
+                help="Repeat normalized input over time; first conv is float, then LIF.")
     args = ap.parse_args()
 
     set_seed(args.seed)
@@ -230,6 +232,7 @@ def main():
         reset_mode          =   "to_reset",
         num_classes         =   10,
         use_bn              =   False,
+        repeat_input        =   args.repeat_input,
     ).to(device)
 
     if args.deterministic_encoder:

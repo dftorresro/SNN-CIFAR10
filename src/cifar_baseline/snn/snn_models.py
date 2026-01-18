@@ -30,9 +30,18 @@ class SpikingCifarCNN(nn.Module):
         reset_mode          : str = "to_reset",
         num_classes         : int = 10,
         use_bn              : bool = False,   
+        repeat_input        : bool = False,
     ):
         super().__init__()
         self.T = int(T)
+        self.repeat_input = repeat_input
+        self.input_is_normalized = input_is_normalized
+
+        # CIFAR-10 mean/std (torchvision); used for repeat-input mode
+        mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32).view(1, 3, 1, 1)
+        std  = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32).view(1, 3, 1, 1)
+        self.register_buffer("cifar_mean", mean)
+        self.register_buffer("cifar_std", std)
 
         self.encoder = BernoulliRateEncoder(p_scale=p_scale, input_is_normalized=input_is_normalized)
 
@@ -58,16 +67,25 @@ class SpikingCifarCNN(nn.Module):
         """
         B = x.size(0)
 
-        # Initialize membrane states lazily (need correct shapes)
         v1 = None
         v2 = None
-
         logits_sum = torch.zeros((B, 10), device=x.device, dtype=x.dtype)
 
-        for _ in range(self.T):
-            x_spk = self.encoder(x)  # [B,3,32,32] spikes
+        # If repeat_input=True: feed float inputs to conv1 every timestep 
+        if self.repeat_input:
+            x_in = x
+            if self.input_is_normalized:
+                # back to approx [0,1]
+                x_in = x_in * self.cifar_std + self.cifar_mean
+            x_in = x_in.clamp(0.0, 1.0)
 
-            h1_cur = self.bn1(self.conv1(x_spk))
+        for _ in range(self.T):
+            if not self.repeat_input:
+                # Original path: sample spikes each timestep
+                x_in = self.encoder(x)  # [B,3,32,32] spikes (0/1) or rates
+
+            # First conv runs on x_in (float or spikes depending on mode), then LIF
+            h1_cur = self.bn1(self.conv1(x_in))
             if v1 is None:
                 v1 = self.lif1.init_state(h1_cur)
             h1_spk, v1 = self.lif1(h1_cur, v1)

@@ -53,26 +53,16 @@ class BernoulliRateEncoder(nn.Module):
         spikes = (torch.rand_like(p) < p).to(x.dtype)
         return spikes
 
-class RepeatValueEncoder(torch.nn.Module):
+class RepeatValueEncoder(nn.Module):
     """
-    Deterministic encoding:
-      - inputs in [0,1]
-      - repeat across time (we do it outside by calling encoder each step)
-      - first conv sees float values (not spikes)
-      - LIF sits on top of conv
+    Deterministic input conversion:
+    - assumes x already in [0,1]
+    - repeats x over time: [B,C,H,W] -> [T,B,C,H,W]
     """
-
-    def __init__(self, scale: float = 1.0, clamp_01: bool = True):
+    def __init__(self, T: int = 8):
         super().__init__()
-        self.scale = float(scale)
-        self.clamp_01 = bool(clamp_01)
+        self.T = int(T)
 
-    def forward(self, x: torch.Tensor, T: int) -> torch.Tensor:
-        # normalize to [0,1] if desired
-        p = x * self.scale
-        if self.clamp_01:
-            p = p.clamp(0.0, 1.0)
-
-        # repeat on time axis
-        # output: [T, B, C, H, W]
-        return p.unsqueeze(0).repeat(int(T), 1, 1, 1, 1)
+    def forward(self, x: torch.Tensor, T: int | None = None) -> torch.Tensor:
+        T = self.T if T is None else int(T)
+        return x.unsqueeze(0).repeat(T, 1, 1, 1, 1)
