@@ -38,5 +38,18 @@ Notes:
   - Parallelized ES with stochastic spike sampling is currently blocked by vmap randomness constraints, so the deterministic encoder is used by default for parallel runs
 
 
+Updates since your suggestions:
+-	I added an MNIST ES sanity run (smaller model + smaller input) to validate the ES loop on an easier benchmark. ES shows measurable progress there, which supports that the implementation can learn in a simpler regime even if CIFAR-10 remains challenging.
+
+-	I implemented your proposed input conversion scheme (“repeat-input”): the input image is repeated across the time axis (T timesteps) as continuous values, then the first conv operates on floats and a LIF is applied after it. This reduces stochasticity from spike sampling and lets the network learn a conversion scheme from data.
+
+-	With repeat-input, I see a clearer learning signal under ES on CIFAR-10 fixed subsets, including at a larger subset size (2048 train / 1000 test). The gains remain modest, but it’s more consistent than the noisier encoding path.
+
+-	I’ve updated the Makefile to include the new reproducible runs:
+	•	make mnist_es (MNIST ES sanity)
+	•	make es_repeat_small and make es_repeat_big (CIFAR repeat-input ES, small and larger subsets)
+	•	make es_norepeat_big (control run without repeat-input at the same scale)
+
+
 Best,
 Daniel
