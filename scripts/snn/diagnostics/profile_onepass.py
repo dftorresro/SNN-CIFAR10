@@ -103,7 +103,7 @@ def main():
     # pool => 64x16x16
     # conv2: 64 -> 128, k=3, pad=1 => 128x16x16
     # pool => 128x8x8
-    bytes_per_el = 2 if use_amp else 4
+    bytes_per_el = 2 if use_amp else 4 
 
     conv1 = Conv2dSpec(cin=3, cout=64, h=32, w=32, k=3, stride=1, padding=1)
     h1, w1 = conv1.hout_wout()  # 32,32
